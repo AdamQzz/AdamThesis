@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import copy
 
-from source import DATA_DIR
+from source import DATA_DIR, RESULT_DIR
 
 class PopulationPredict(object):
     def __init__(self):
@@ -17,8 +17,11 @@ class PopulationPredict(object):
         self.df_ent = pd.read_csv(os.path.join(DATA_DIR, 'cover_rate', "Enterprise.csv"))
         self.df_pub = pd.read_csv(os.path.join(DATA_DIR, 'cover_rate', "Public.csv"))
         self.df_resi = pd.read_csv(os.path.join(DATA_DIR, 'cover_rate', "Resident.csv"))
+        self.df_pay = pd.read_csv(os.path.join(DATA_DIR, 'cover_rate', "Pay.csv"))
 
-        print()
+        self.df_gdp = pd.read_csv(os.path.join(DATA_DIR, 'eco_data', "GDP.csv"))
+        self.df_fiscal = pd.read_csv(os.path.join(DATA_DIR, 'eco_data', "fiscal.csv"))
+        self.df_pension = pd.read_csv(os.path.join(DATA_DIR, 'eco_data', "pension.csv"))
 
     def pop_exec(self, hukou, province, rural_result=None):
         if hukou == "R":
@@ -101,7 +104,7 @@ class PopulationPredict(object):
 
         return result
 
-    def pens_exec(self, province, work_age, retire_age):
+    def pens_pop_exec(self, province, work_age, retire_age):
         rural_result = self.pop_exec("R", province)
         urban_result = self.pop_exec("U", province, rural_result)
 
@@ -115,13 +118,13 @@ class PopulationPredict(object):
                                        [retire_age["F"]["P"]:]).reset_index(drop=True).drop(columns=["label"])
 
         df_retired_u_m = copy.deepcopy(urban_result[0]["M"]
-                                       [retire_age["M"]["R"]:]).reset_index(drop=True)
+                                       [retire_age["M"]["R"]:]).reset_index(drop=True).drop(columns=["label"])
         df_retired_u_f = copy.deepcopy(urban_result[0]["F"]
-                                       [retire_age["F"]["R"]:]).reset_index(drop=True)
+                                       [retire_age["F"]["R"]:]).reset_index(drop=True).drop(columns=["label"])
         df_retired_r_m = copy.deepcopy(rural_result[0]["M"]
-                                       [retire_age["M"]["R"]:]).reset_index(drop=True)
+                                       [retire_age["M"]["R"]:]).reset_index(drop=True).drop(columns=["label"])
         df_retired_r_f = copy.deepcopy(rural_result[0]["F"]
-                                       [retire_age["F"]["R"]:]).reset_index(drop=True)
+                                       [retire_age["F"]["R"]:]).reset_index(drop=True).drop(columns=["label"])
 
         df_retired_e_m.loc[:, province] = df_retired_e_m[province] * self.df_ent["male"][0]
         df_retired_e_f.loc[:, province] = df_retired_e_f[province] * self.df_ent["female"][0]
@@ -138,7 +141,6 @@ class PopulationPredict(object):
         df_retired_r_m.loc[:, province] = df_retired_r_m[province] * self.df_resi["male"]
         df_retired_r_f.loc[:, province] = df_retired_r_f[province] * self.df_resi["female"]
 
-
         deadRate_u_m = self.df_deadRate[(self.df_deadRate.Hukou == "U")
                                       & (self.df_deadRate.Gender == "M")][province].reset_index(drop=True)
         deadRate_u_f = self.df_deadRate[(self.df_deadRate.Hukou == "U")
@@ -148,6 +150,25 @@ class PopulationPredict(object):
                                         & (self.df_deadRate.Gender == "M")][province].reset_index(drop=True)
         deadRate_r_f = self.df_deadRate[(self.df_deadRate.Hukou == "R")
                                         & (self.df_deadRate.Gender == "F")][province].reset_index(drop=True)
+
+        df_u_m = urban_result[0]["M"]
+        df_u_f = urban_result[0]["F"]
+
+        pay_e_m = (df_u_m[province][work_age["M"]["E"]:retire_age["M"]["E"]]
+                   * self.df_ent["male"][0] * self.df_pay["ENmale"][0]).sum()
+        pay_e_f = (df_u_f[province][work_age["F"]["E"]:retire_age["F"]["E"]]
+                   * self.df_ent["female"][0] * self.df_pay["ENfemale"][0]).sum()
+
+        pay_p_m = (df_u_m[province][work_age["M"]["P"]:retire_age["M"]["P"]]
+                   * self.df_pub["male"][0] * self.df_pay["Pubmale"][0]).sum()
+        pay_p_f = (df_u_f[province][work_age["F"]["P"]:retire_age["F"]["P"]]
+                   * self.df_pub["female"][0] * self.df_pay["Pubfemale"][0]).sum()
+
+        total_pay = pay_e_m + pay_e_f + pay_p_m + pay_p_f
+
+        result = [{"E": [df_retired_e_m, df_retired_e_f], "P": [df_retired_p_m, df_retired_p_f],
+                   "U": [df_retired_u_m, df_retired_u_f], "R": [df_retired_r_m, df_retired_r_f],
+                   "Pay": total_pay}, ]
 
         for i in range(1, len(urban_result)):
             new_label_m = "M"
@@ -243,22 +264,64 @@ class PopulationPredict(object):
             df_retired_r_m.loc[0, province] = new_retire_r_m
             df_retired_r_f.loc[0, province] = new_retire_r_f
 
+            pay_e_m = (df_u_m[province][work_age["M"]["E"]:retire_age["M"]["E"]]
+                       * self.df_ent["male"][i] * self.df_pay["ENmale"][i]).sum()
+            pay_e_f = (df_u_f[province][work_age["F"]["E"]:retire_age["F"]["E"]]
+                       * self.df_ent["female"][i] * self.df_pay["ENfemale"][i]).sum()
 
-            #
-            #
-            #
-            # df_m["P"] = df_m[province] * (self.df_ent
+            pay_p_m = (df_u_m[province][work_age["M"]["P"]:retire_age["M"]["P"]]
+                       * self.df_pub["male"][i] * self.df_pay["Pubmale"][i]).sum()
+            pay_p_f = (df_u_f[province][work_age["F"]["P"]:retire_age["F"]["P"]]
+                       * self.df_pub["female"][i] * self.df_pay["Pubfemale"][i]).sum()
+
+            total_pay = pay_e_m + pay_e_f + pay_p_m + pay_p_f
+
+            result.append({"E": [df_retired_e_m, df_retired_e_f], "P": [df_retired_p_m, df_retired_p_f],
+                   "U": [df_retired_u_m, df_retired_u_f], "R": [df_retired_r_m, df_retired_r_f],
+                   "Pay": total_pay})
+
+            print("finish ", i)
+
+        return result
+
+    def pens_exec(self, pens_pop_result):
 
 
-            print()
-        # for
+        print()
 
+
+    def final_exec(self):
+        retire_age_ = pd.DataFrame({"M": [60, 65, 60], "F": [50, 55, 50]}, index=["E", "P", "R"])
+        work_age_ = pd.DataFrame({"M": [20, 23], "F": [20, 23]}, index=["E", "P"])
+
+        province = "Shanghai"
+
+        rural_result = self.pop_exec("R", province)
+        urban_result = self.pop_exec("U", province, rural_result)
+
+        pens_pop_result = self.pens_pop_exec(province, work_age_, retire_age_)
+
+        total_male_r = []
+        total_female_r = []
+
+        total_male_u = []
+        total_female_u = []
+
+        total_pay_list = []
+
+        for i in range(len(rural_result)):
+            total_male_r.append(rural_result[i]["M"][province].sum())
+            total_female_r.append(rural_result[i]["F"][province].sum())
+            total_male_u.append(urban_result[i]["M"][province].sum())
+            total_female_u.append(urban_result[i]["F"][province].sum())
+
+            total_pay_list.append(pens_pop_result[i]["Pay"])
+
+        result = pd.DataFrame({"u_m": total_male_u, "u_f": total_female_u, "r_m": total_male_r, "r_f": total_female_r, "total_pay": total_pay_list})
+        result.to_csv(os.path.join(RESULT_DIR, province + "_result.csv"))
 
 if __name__ == "__main__":
     pop_predict = PopulationPredict()
 
-    retire_age_ = pd.DataFrame({"M": [60, 65, 60], "F": [50, 55, 50]}, index=["E", "P", "R"])
-    work_age_ = pd.DataFrame({"M": [20, 23], "F": [20, 23]}, index=["E", "P"])
-
-    pop_predict.pens_exec("Beijin", work_age_, retire_age_)
+    pop_predict.final_exec()
 
